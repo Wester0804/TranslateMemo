@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "智能翻譯記憶工具",
+  "version": "1.0",
+  "description": "記憶翻譯詞彙並在網頁中自動標記的翻譯工具",
+  
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  
+  "background": {
+    "service_worker": "background.js"
+  },
+  
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"]
+    }
+  ],
+  
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "翻譯工具"
+  },
+  
+  "web_accessible_resources": [
+    {
+      "resources": ["manager.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

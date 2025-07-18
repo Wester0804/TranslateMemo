@@ -1,0 +1,95 @@
+/* content.css */
+.translation-highlight {
+    background-color: #fff3cd !important;
+    border-bottom: 2px solid #ffc107 !important;
+    cursor: help !important;
+    padding: 1px 2px !important;
+    border-radius: 3px !important;
+    transition: all 0.2s ease !important;
+    position: relative !important;
+}
+
+.translation-highlight:hover {
+    background-color: #ffeaa7 !important;
+    border-bottom-color: #fdcb6e !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+}
+
+.translation-tooltip {
+    position: absolute !important;
+    z-index: 10000 !important;
+    background: #2c3e50 !important;
+    color: white !important;
+    padding: 0 !important;
+    border-radius: 6px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+    font-size: 14px !important;
+    line-height: 1.4 !important;
+    max-width: 300px !important;
+    word-wrap: break-word !important;
+    animation: tooltipFadeIn 0.2s ease-out !important;
+}
+
+.translation-tooltip::before {
+    content: '' !important;
+    position: absolute !important;
+    top: -8px !important;
+    left: 20px !important;
+    width: 0 !important;
+    height: 0 !important;
+    border-left: 8px solid transparent !important;
+    border-right: 8px solid transparent !important;
+    border-bottom: 8px solid #2c3e50 !important;
+}
+
+.tooltip-content {
+    padding: 12px 16px !important;
+}
+
+.tooltip-original {
+    font-weight: 600 !important;
+    margin-bottom: 4px !important;
+    color: #74b9ff !important;
+    font-size: 13px !important;
+}
+
+.tooltip-translation {
+    color: #ddd !important;
+    font-size: 14px !important;
+}
+
+@keyframes tooltipFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 針對不同網站的適配 */
+.translation-highlight[data-site="wikipedia"] {
+    background-color: #e8f4fd !important;
+    border-bottom-color: #2196f3 !important;
+}
+
+.translation-highlight[data-site="news"] {
+    background-color: #fff8e1 !important;
+    border-bottom-color: #ff9800 !important;
+}
+
+/* 暗色主題適配 */
+@media (prefers-color-scheme: dark) {
+    .translation-highlight {
+        background-color: #3a3a3a !important;
+        border-bottom-color: #ffc107 !important;
+        color: #fff !important;
+    }
+    
+    .translation-highlight:hover {
+        background-color: #4a4a4a !important;
+    }
+}
