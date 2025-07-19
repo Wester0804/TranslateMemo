@@ -9,7 +9,10 @@ init();
 function init() {
     loadTranslations();
     loadSettings();
-    
+
+    // 添加網站識別
+    document.body.setAttribute('data-domain', window.location.hostname);
+
     // 監聽來自 popup 的消息
     chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
         switch(request.action) {
@@ -48,6 +51,7 @@ function init() {
 function loadTranslations() {
     chrome.storage.local.get(['translations'], function(result) {
         translations = result.translations || {};
+        console.log('載入的翻譯:', translations); // 添加此行來除錯
         if (highlightEnabled) {
             highlightTranslations();
         }
@@ -58,6 +62,7 @@ function loadTranslations() {
 function loadSettings() {
     chrome.storage.sync.get(['highlightEnabled'], function(result) {
         highlightEnabled = result.highlightEnabled !== false;
+        console.log('Highlight 狀態:', highlightEnabled); // 添加此行來除錯
         if (highlightEnabled) {
             highlightTranslations();
         }
@@ -72,7 +77,9 @@ function getSelectedText() {
 
 // 標記翻譯
 function highlightTranslations() {
+    console.log('開始標記翻譯'); // 添加此行來除錯
     if (!highlightEnabled || Object.keys(translations).length === 0) {
+        console.log('未啟用標記或無翻譯資料'); // 添加此行來除錯
         return;
     }
     
@@ -136,25 +143,31 @@ function highlightTextNode(textNode) {
         const regex = new RegExp(escapeRegExp(word), 'gi');
         newHTML = newHTML.replace(regex, function(match) {
             const translation = translations[word.toLowerCase()];
-            return `<span class="translation-highlight" 
-                          data-original="${match}" 
-                          data-translation="${translation.translation}"
-                          title="${match} → ${translation.translation}">
-                        ${match}
-                    </span>`;
+            return `<span class="translation-highlight" data-original="${match}" data-translation="${translation.translation}" title="${match} → ${translation.translation}">${match}</span>`;
         });
     }
     
     if (newHTML !== text) {
-        const wrapper = document.createElement('div');
-        wrapper.innerHTML = newHTML;
+        const wrapper = document.createElement('span');
+        wrapper.innerHTML = newHTML.trim(); // 修剪前後空白
+
+        // 優化空白節點處理
+        const fragment = document.createDocumentFragment();
+        Array.from(wrapper.childNodes).forEach(node => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                const trimmed = node.textContent;
+                if (trimmed) {
+                    fragment.appendChild(document.createTextNode(trimmed));
+                }
+            } else {
+                fragment.appendChild(node);
+            }
+        });
         
-        // 替換原始文字節點
+        // 替換原始節點
         const parent = textNode.parentNode;
-        while (wrapper.firstChild) {
-            parent.insertBefore(wrapper.firstChild, textNode);
-        }
-        parent.removeChild(textNode);
+        parent.replaceChild(fragment, textNode);
+        parent.normalize();
     }
 }
 
@@ -211,6 +224,26 @@ function showTooltip(element, event) {
     const rect = element.getBoundingClientRect();
     tooltip.style.left = rect.left + window.scrollX + 'px';
     tooltip.style.top = rect.bottom + window.scrollY + 5 + 'px';
+
+    // 調整工具提示位置
+    const viewportHeight = window.innerHeight;
+    const tooltipHeight = tooltip.offsetHeight;
+    
+    let top = rect.bottom + 5;
+    let left = rect.left;
+    
+    // 確保提示框不會超出視窗底部
+    if (top + tooltipHeight > viewportHeight) {
+        top = rect.top - tooltipHeight - 5;
+    }
+    
+    // 確保提示框不會超出視窗右側
+    if (left + tooltip.offsetWidth > window.innerWidth) {
+        left = window.innerWidth - tooltip.offsetWidth - 5;
+    }
+    
+    tooltip.style.top = `${top}px`;
+    tooltip.style.left = `${left}px`;
 }
 
 function hideTooltip() {
