@@ -3,10 +3,20 @@
     background-color: #fff3cd !important;
     border-bottom: 2px solid #ffc107 !important;
     cursor: help !important;
-    padding: 1px 2px !important;
-    border-radius: 3px !important;
+    padding: 0 !important;
+    margin: 0 !important; 
+    border-radius: 2px !important;
     transition: all 0.2s ease !important;
     position: relative !important;
+    line-height: inherit !important; /* 繼承父元素行高 */
+    vertical-align: baseline !important; /* 對齊基線 */
+    box-decoration-break: clone !important; /* 確保跨行時樣式一致 */
+    white-space: pre-wrap !important; /* 保持原有的空白格式 */
+    word-break: keep-all !important; /* 防止單字被斷開 */
+    word-spacing: normal !important; /* 修正字間距 */
+    letter-spacing: normal !important; /* 修正字母間距 */
+    display: inline-block !important; /* 改用 inline-block 以更好控制佈局 */
+    text-indent: 0 !important; /* 防止縮排影響 */
 }
 
 .translation-highlight:hover {
@@ -17,8 +27,8 @@
 
 .translation-tooltip {
     position: absolute !important;
-    z-index: 10000 !important;
-    background: #2c3e50 !important;
+    z-index: 1000 !important;
+    background: rgba(44, 62, 80, 0.95) !important;
     color: white !important;
     padding: 0 !important;
     border-radius: 6px !important;
@@ -29,6 +39,7 @@
     max-width: 300px !important;
     word-wrap: break-word !important;
     animation: tooltipFadeIn 0.2s ease-out !important;
+    pointer-events: none !important;/* 防止遮擋點擊 */
 }
 
 .translation-tooltip::before {
@@ -45,6 +56,9 @@
 
 .tooltip-content {
     padding: 12px 16px !important;
+    pointer-events: auto !important; /* 允許點擊 */
+    position: relative !important;
+    z-index: 999999999 !important;
 }
 
 .tooltip-original {
@@ -92,4 +106,15 @@
     .translation-highlight:hover {
         background-color: #4a4a4a !important;
     }
+}
+
+/* 針對特定網站的文字間距調整 */
+.translation-highlight + .translation-highlight {
+    margin-left: 0 !important; /* 移除相鄰元素間的間距 */
+}
+
+/* 確保內容不會被截斷 */
+.translation-highlight * {
+    display: inline !important;
+    vertical-align: baseline !important;
 }
