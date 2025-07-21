@@ -65,6 +65,21 @@
             min-height: 60px;
         }
         
+        .language-select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            background-color: white;
+            cursor: pointer;
+        }
+        
+        .language-select:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+        
         .button {
             width: 100%;
             padding: 12px;
@@ -218,12 +233,25 @@
     
     <div class="translate-section">
         <div class="input-group">
+            <label for="targetLanguage">目標語言</label>
+            <select id="targetLanguage" class="language-select">
+                <option value="en">English</option>
+                <option value="zh-TW">繁體中文</option>
+                <option value="zh-CN">簡體中文</option>
+                <option value="ja">日文</option>
+                <option value="ko">韓文</option>
+                <option value="fr">法文</option>
+                <option value="de">德文</option>
+                <option value="es">西班牙文</option>
+            </select>
+        </div>
+        <div class="input-group">
             <label for="sourceText">要翻譯的文字</label>
             <textarea id="sourceText" placeholder="輸入要翻譯的文字..."></textarea>
         </div>
         <div class="input-group">
             <label for="translation">翻譯結果</label>
-            <textarea id="translation" placeholder="輸入翻譯結果..."></textarea>
+            <textarea id="translation" placeholder="翻譯結果..." readonly></textarea>
         </div>
         <button class="button" id="saveTranslation">儲存翻譯</button>
         <button class="button secondary" id="openManager">管理詞彙</button>

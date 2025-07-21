@@ -17,6 +17,8 @@
     letter-spacing: normal !important; /* 修正字母間距 */
     display: inline-block !important; /* 改用 inline-block 以更好控制佈局 */
     text-indent: 0 !important; /* 防止縮排影響 */
+    pointer-events: auto !important; /* 允許事件觸發 */
+    z-index: 1 !important; /* 降低層級 */
 }
 
 .translation-highlight:hover {
@@ -27,7 +29,7 @@
 
 .translation-tooltip {
     position: absolute !important;
-    z-index: 1000 !important;
+    z-index: 999999999 !important; /* 調整 z-index */
     background: rgba(44, 62, 80, 0.95) !important;
     color: white !important;
     padding: 0 !important;
@@ -39,7 +41,8 @@
     max-width: 300px !important;
     word-wrap: break-word !important;
     animation: tooltipFadeIn 0.2s ease-out !important;
-    pointer-events: none !important;/* 防止遮擋點擊 */
+    pointer-events: none !important;
+    transform: translateY(5px) !important; /* 向下移動避免遮擋 */
 }
 
 .translation-tooltip::before {
@@ -117,4 +120,15 @@
 .translation-highlight * {
     display: inline !important;
     vertical-align: baseline !important;
+}
+
+/* 在 Google 搜尋頁面特別處理 */
+body[data-domain*="google"] .translation-highlight {
+    background: transparent !important;
+    border-bottom: none !important;
+    pointer-events: none !important;
+}
+
+body[data-domain*="google"] .translation-tooltip {
+    display: none !important;
 }

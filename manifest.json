@@ -13,7 +13,11 @@
   
   "host_permissions": [
     "http://*/*",
-    "https://*/*"
+    "https://*/*",
+    "*://*.google.com/*",
+    "https://translate.googleapis.com/*",
+    "https://translate.argosopentech.com/*",
+    "https://libretranslate.de/*"
   ],
   
   "background": {

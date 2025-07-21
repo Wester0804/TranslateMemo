@@ -3,16 +3,53 @@ let translations = {};
 let highlightEnabled = true;
 let highlightedElements = new Set();
 
+// 監聽來自 popup 的消息
+chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+    console.log('Content script 收到消息:', request);
+    switch(request.action) {
+        case 'getSelectedText':
+            const selectedText = getSelectedText();
+            console.log('傳送選取的文字:', selectedText);
+            sendResponse({text: selectedText});
+            break;
+        case 'updateTranslations':
+            translations = request.translations;
+            highlightTranslations();
+            break;
+        case 'toggleHighlight':
+            highlightEnabled = request.enabled;
+            if (highlightEnabled) {
+                highlightTranslations();
+            } else {
+                removeHighlights();
+            }
+            break;
+    }
+    return true; // 保持消息通道開啟
+});
+
 // 初始化
 init();
 
 function init() {
+    console.log('Content script 初始化中...');
     loadTranslations();
     loadSettings();
 
     // 添加網站識別
     document.body.setAttribute('data-domain', window.location.hostname);
 
+    // 檢查是否為 Google 搜尋頁面
+    const isGoogleSearch = window.location.hostname.includes('google') && 
+                          (window.location.pathname.includes('/search') || 
+                           window.location.search.includes('?q=') || 
+                           window.location.search.includes('&q='));
+    
+    if (isGoogleSearch) {
+        document.body.setAttribute('data-site', 'google-search');
+        highlightEnabled = false;
+    }
+    
     // 監聽來自 popup 的消息
     chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
         switch(request.action) {
@@ -77,6 +114,11 @@ function getSelectedText() {
 
 // 標記翻譯
 function highlightTranslations() {
+    // 如果是 Google 搜尋頁面，直接返回
+    if (document.body.getAttribute('data-site') === 'google-search') {
+        return;
+    }
+    
     console.log('開始標記翻譯'); // 添加此行來除錯
     if (!highlightEnabled || Object.keys(translations).length === 0) {
         console.log('未啟用標記或無翻譯資料'); // 添加此行來除錯
@@ -187,14 +229,18 @@ function escapeRegExp(string) {
 }
 
 // 添加工具提示功能
-document.addEventListener('mouseover', function(e) {
-    if (e.target.classList.contains('translation-highlight')) {
-        showTooltip(e.target, e);
+document.body.addEventListener('mouseover', function(e) {
+    const highlightEl = e.target.closest('.translation-highlight');
+    if (highlightEl) {
+        showTooltip(highlightEl, e);
     }
 });
 
-document.addEventListener('mouseout', function(e) {
-    if (e.target.classList.contains('translation-highlight')) {
+document.body.addEventListener('mouseout', function(e) {
+    const highlightEl = e.target.closest('.translation-highlight');
+    const tooltipEl = e.target.closest('.translation-tooltip');
+    
+    if (highlightEl && !tooltipEl) {
         hideTooltip();
     }
 });
