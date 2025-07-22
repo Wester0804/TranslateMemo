@@ -12,8 +12,9 @@ const pagination = document.getElementById('pagination');
 const editModal = document.getElementById('editModal');
 const editForm = document.getElementById('editForm');
 const editOriginal = document.getElementById('editOriginal');
-const editTranslation = document.getElementById('editTranslation');
+const editTranslationInput = document.getElementById('editTranslation');
 const clearAllBtn = document.getElementById('clearAllBtn');
+const refreshBtn = document.getElementById('refreshBtn');
 const exportJsonBtn = document.getElementById('exportJsonBtn');
 const exportCsvBtn = document.getElementById('exportCsvBtn');
 const importBtn = document.getElementById('importBtn');
@@ -23,13 +24,28 @@ const importFile = document.getElementById('importFile');
 document.addEventListener('DOMContentLoaded', function() {
     loadTranslations();
     setupEventListeners();
+    setupStorageListener();
 });
+
+// 設定 Storage 變化監聽器
+function setupStorageListener() {
+    // 監聽 storage 變化
+    chrome.storage.onChanged.addListener(function(changes, namespace) {
+        if (namespace === 'local' && changes.translations) {
+            console.log('檢測到翻譯資料變化，重新載入...');
+            loadTranslations();
+        }
+    });
+}
 
 // 載入翻譯資料
 function loadTranslations() {
     chrome.storage.local.get(['translations', 'todayTranslations'], function(result) {
         translations = result.translations || {};
         filteredTranslations = {...translations};
+        
+        console.log('Manager 載入的翻譯資料:', translations);
+        console.log('翻譯項目數量:', Object.keys(translations).length);
         
         updateStats();
         renderTranslations();
@@ -51,6 +67,20 @@ function setupEventListeners() {
         
         currentPage = 1;
         renderTranslations();
+    });
+    
+    // 重新載入按鈕
+    refreshBtn.addEventListener('click', function() {
+        console.log('手動重新載入翻譯資料...');
+        refreshBtn.textContent = '🔄 載入中...';
+        refreshBtn.disabled = true;
+        
+        loadTranslations();
+        
+        setTimeout(() => {
+            refreshBtn.textContent = '🔄 重新載入';
+            refreshBtn.disabled = false;
+        }, 500);
     });
     
     // 清除全部
@@ -217,7 +247,7 @@ function editTranslation(key) {
     const item = translations[key];
     
     editOriginal.value = key;
-    editTranslation.value = item.translation;
+    document.getElementById('editTranslation').value = item.translation;
     
     editModal.style.display = 'block';
 }
@@ -227,7 +257,7 @@ function saveEdit(e) {
     e.preventDefault();
     
     const newOriginal = editOriginal.value.trim().toLowerCase();
-    const newTranslation = editTranslation.value.trim();
+    const newTranslation = document.getElementById('editTranslation').value.trim();
     
     if (!newOriginal || !newTranslation) {
         alert('請填寫完整資訊');

@@ -8,16 +8,14 @@
     "storage",
     "activeTab",
     "scripting",
-    "tabs"
+    "tabs",
+    "contextMenus"
   ],
   
   "host_permissions": [
     "http://*/*",
     "https://*/*",
-    "*://*.google.com/*",
-    "https://translate.googleapis.com/*",
-    "https://translate.argosopentech.com/*",
-    "https://libretranslate.de/*"
+    "https://translate.googleapis.com/*"
   ],
   
   "background": {
@@ -34,7 +32,20 @@
   
   "action": {
     "default_popup": "popup.html",
-    "default_title": "翻譯工具"
+    "default_title": "翻譯工具",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   
   "web_accessible_resources": [

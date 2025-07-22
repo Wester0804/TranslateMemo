@@ -2,15 +2,28 @@
 let translations = {};
 let highlightEnabled = true;
 let highlightedElements = new Set();
+let lastSelectedText = ''; // 儲存最後選取的文字
+
+// 監聽文字選取事件
+document.addEventListener('selectionchange', function() {
+    const selection = window.getSelection();
+    const selectedText = selection.toString().trim();
+    if (selectedText && selectedText.length > 0) {
+        lastSelectedText = selectedText;
+        console.log('文字已選取:', selectedText);
+    }
+});
 
 // 監聽來自 popup 的消息
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     console.log('Content script 收到消息:', request);
     switch(request.action) {
         case 'getSelectedText':
-            const selectedText = getSelectedText();
-            console.log('傳送選取的文字:', selectedText);
-            sendResponse({text: selectedText});
+            // 首先嘗試獲取當前選取的文字，如果沒有則使用最後選取的文字
+            const currentSelectedText = getSelectedText();
+            const textToSend = currentSelectedText || lastSelectedText;
+            console.log('傳送選取的文字:', textToSend);
+            sendResponse({text: textToSend});
             break;
         case 'updateTranslations':
             translations = request.translations;
@@ -23,6 +36,9 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
             } else {
                 removeHighlights();
             }
+            break;
+        case 'showTranslatePrompt':
+            showTranslatePrompt(request.text);
             break;
     }
     return true; // 保持消息通道開啟
@@ -49,27 +65,6 @@ function init() {
         document.body.setAttribute('data-site', 'google-search');
         highlightEnabled = false;
     }
-    
-    // 監聽來自 popup 的消息
-    chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
-        switch(request.action) {
-            case 'getSelectedText':
-                sendResponse({text: getSelectedText()});
-                break;
-            case 'updateTranslations':
-                translations = request.translations;
-                highlightTranslations();
-                break;
-            case 'toggleHighlight':
-                highlightEnabled = request.enabled;
-                if (highlightEnabled) {
-                    highlightTranslations();
-                } else {
-                    removeHighlights();
-                }
-                break;
-        }
-    });
     
     // 監聽頁面變化
     const observer = new MutationObserver(function(mutations) {
@@ -107,9 +102,17 @@ function loadSettings() {
 }
 
 // 獲取選取的文字
+// 獲取選取的文字
 function getSelectedText() {
-    const selection = window.getSelection();
-    return selection.toString().trim();
+    try {
+        const selection = window.getSelection();
+        const selectedText = selection.toString().trim();
+        console.log('獲取選取文字:', selectedText);
+        return selectedText;
+    } catch (error) {
+        console.error('獲取選取文字時發生錯誤:', error);
+        return '';
+    }
 }
 
 // 標記翻譯
@@ -246,6 +249,8 @@ document.body.addEventListener('mouseout', function(e) {
 });
 
 let tooltip = null;
+let currentTooltipElement = null;
+let scrollListener = null;
 
 function showTooltip(element, event) {
     const original = element.getAttribute('data-original');
@@ -255,46 +260,172 @@ function showTooltip(element, event) {
         hideTooltip();
     }
     
+    currentTooltipElement = element;
+    
     tooltip = document.createElement('div');
     tooltip.className = 'translation-tooltip';
+    tooltip.style.cssText = `
+        position: fixed;
+        background: rgba(0, 0, 0, 0.9);
+        color: white;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        z-index: 10000;
+        max-width: 250px;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+    `;
+    
     tooltip.innerHTML = `
-        <div class="tooltip-content">
-            <div class="tooltip-original">${original}</div>
-            <div class="tooltip-translation">${translation}</div>
-        </div>
+        <div style="font-weight: 500; margin-bottom: 2px;">${original}</div>
+        <div style="font-size: 12px; opacity: 0.8;">${translation}</div>
     `;
     
     document.body.appendChild(tooltip);
     
-    // 定位工具提示
-    const rect = element.getBoundingClientRect();
-    tooltip.style.left = rect.left + window.scrollX + 'px';
-    tooltip.style.top = rect.bottom + window.scrollY + 5 + 'px';
+    // 初始定位
+    updateTooltipPosition();
+    
+    // 顯示動畫
+    requestAnimationFrame(() => {
+        tooltip.style.opacity = '1';
+    });
+    
+    // 添加滾動監聽器
+    scrollListener = function() {
+        if (tooltip && currentTooltipElement) {
+            updateTooltipPosition();
+        }
+    };
+    
+    window.addEventListener('scroll', scrollListener, { passive: true });
+    document.addEventListener('scroll', scrollListener, { passive: true });
+}
 
-    // 調整工具提示位置
-    const viewportHeight = window.innerHeight;
-    const tooltipHeight = tooltip.offsetHeight;
+function updateTooltipPosition() {
+    if (!tooltip || !currentTooltipElement) return;
     
-    let top = rect.bottom + 5;
-    let left = rect.left;
+    const rect = currentTooltipElement.getBoundingClientRect();
     
-    // 確保提示框不會超出視窗底部
-    if (top + tooltipHeight > viewportHeight) {
-        top = rect.top - tooltipHeight - 5;
+    // 檢查元素是否還在視窗內
+    if (rect.bottom < 0 || rect.top > window.innerHeight || 
+        rect.right < 0 || rect.left > window.innerWidth) {
+        hideTooltip();
+        return;
     }
     
-    // 確保提示框不會超出視窗右側
-    if (left + tooltip.offsetWidth > window.innerWidth) {
-        left = window.innerWidth - tooltip.offsetWidth - 5;
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const margin = 8;
+    
+    // 計算最佳位置
+    let top = rect.bottom + margin;
+    let left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+    
+    // 檢查是否會超出視窗底部
+    if (top + tooltipRect.height > window.innerHeight - margin) {
+        top = rect.top - tooltipRect.height - margin;
     }
     
-    tooltip.style.top = `${top}px`;
+    // 檢查是否會超出視窗左側
+    if (left < margin) {
+        left = margin;
+    }
+    
+    // 檢查是否會超出視窗右側
+    if (left + tooltipRect.width > window.innerWidth - margin) {
+        left = window.innerWidth - tooltipRect.width - margin;
+    }
+    
+    // 檢查是否會超出視窗頂部
+    if (top < margin) {
+        top = rect.bottom + margin;
+    }
+    
     tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
 }
 
 function hideTooltip() {
     if (tooltip) {
-        tooltip.remove();
-        tooltip = null;
+        tooltip.style.opacity = '0';
+        setTimeout(() => {
+            if (tooltip) {
+                tooltip.remove();
+                tooltip = null;
+            }
+        }, 200);
     }
+    
+    currentTooltipElement = null;
+    
+    // 移除滾動監聽器
+    if (scrollListener) {
+        window.removeEventListener('scroll', scrollListener);
+        document.removeEventListener('scroll', scrollListener);
+        scrollListener = null;
+    }
+}
+
+// 顯示翻譯提示
+function showTranslatePrompt(text) {
+    // 創建提示元素
+    const prompt = document.createElement('div');
+    prompt.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #4CAF50;
+        color: white;
+        padding: 12px 16px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        max-width: 300px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    `;
+    
+    prompt.innerHTML = `
+        <div style="font-weight: bold; margin-bottom: 4px;">已選取文字準備翻譯</div>
+        <div style="font-size: 12px; opacity: 0.9;">"${text.length > 30 ? text.substring(0, 30) + '...' : text}"</div>
+        <div style="font-size: 11px; margin-top: 4px; opacity: 0.8;">點擊擴充功能圖示開始翻譯</div>
+    `;
+    
+    // 添加懸停效果
+    prompt.addEventListener('mouseenter', function() {
+        prompt.style.transform = 'scale(1.02)';
+    });
+    
+    prompt.addEventListener('mouseleave', function() {
+        prompt.style.transform = 'scale(1)';
+    });
+    
+    // 點擊提示框時嘗試開啟擴充功能
+    prompt.addEventListener('click', function() {
+        // 移除提示框
+        prompt.remove();
+        // 這裡無法直接開啟 popup，只能提示用戶
+        console.log('用戶點擊了翻譯提示');
+    });
+    
+    // 添加到頁面
+    document.body.appendChild(prompt);
+    
+    // 3秒後自動移除
+    setTimeout(function() {
+        if (prompt.parentNode) {
+            prompt.style.opacity = '0';
+            setTimeout(() => {
+                if (prompt.parentNode) {
+                    prompt.remove();
+                }
+            }, 300);
+        }
+    }, 3000);
 }

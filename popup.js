@@ -7,9 +7,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const highlightToggle = document.getElementById('highlightToggle');
     const wordCountEl = document.getElementById('wordCount');
     const todayCountEl = document.getElementById('todayCount');
+    const targetLanguage = document.getElementById('targetLanguage');
     const resultEl = document.getElementById('result');
     const resultText = document.getElementById('resultText');
-    const targetLanguage = document.getElementById('targetLanguage');
+    
+    let translateTimeout = null;
 
     // 載入上次選擇的語言
     chrome.storage.sync.get(['targetLanguage'], function(result) {
@@ -21,8 +23,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // 監聽語言選擇變更
     targetLanguage.addEventListener('change', function() {
         chrome.storage.sync.set({ targetLanguage: targetLanguage.value });
-        if (sourceText.value) {
-            translateAndUpdate(sourceText.value);
+        const text = sourceText.value.trim();
+        if (text) {
+            translateAndUpdate(text);
         }
     });
     
@@ -31,6 +34,22 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 載入設定
     loadSettings();
+    
+    // 檢查是否有待翻譯的文字（來自右鍵選單）
+    chrome.storage.local.get(['pendingTranslation'], function(result) {
+        if (result.pendingTranslation) {
+            const pending = result.pendingTranslation;
+            // 檢查是否是最近的請求（避免舊的請求）
+            if (Date.now() - pending.timestamp < 5000) { // 5秒內的請求才有效
+                console.log('發現待翻譯文字:', pending.text);
+                sourceText.value = pending.text;
+                translateAndUpdate(pending.text);
+                checkExistingTranslation(pending.text);
+            }
+            // 清除待翻譯的文字
+            chrome.storage.local.remove(['pendingTranslation']);
+        }
+    });
     
     // 檢查是否有選取的文字
     chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
@@ -42,25 +61,62 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('嘗試取得選取文字...');
         // 檢查是否在允許的頁面上
         const url = tabs[0].url;
-        if (!url || url.startsWith('chrome://') || url.startsWith('chrome-extension://')) {
+        if (!url || url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('edge://')) {
             console.log('在特殊頁面上無法使用選取文字功能');
             return;
         }
 
-        chrome.tabs.sendMessage(tabs[0].id, {
-            action: 'getSelectedText'
-        }, function(response) {
-            if (chrome.runtime.lastError) {
-                console.log('內容腳本可能尚未載入完成，這是正常的:', chrome.runtime.lastError.message);
-                return;
+        // 先嘗試注入 content script（以防它未載入）
+        chrome.scripting.executeScript({
+            target: { tabId: tabs[0].id },
+            func: () => {
+                // 確保 getSelectedText 函數存在
+                if (typeof getSelectedText === 'undefined') {
+                    window.getSelectedText = function() {
+                        const selection = window.getSelection();
+                        return selection.toString().trim();
+                    };
+                }
             }
-            console.log('收到選取文字回應:', response);
-            if (response && response.text) {
-                sourceText.value = response.text;
-                translateAndUpdate(response.text);
-                // 檢查是否已有翻譯
-                checkExistingTranslation(response.text);
-            }
+        }).then(() => {
+            // 然後發送消息獲取選取的文字
+            chrome.tabs.sendMessage(tabs[0].id, {
+                action: 'getSelectedText'
+            }, function(response) {
+                if (chrome.runtime.lastError) {
+                    console.log('嘗試直接獲取選取文字...');
+                    // 如果消息發送失敗，直接執行腳本獲取選取文字
+                    chrome.scripting.executeScript({
+                        target: { tabId: tabs[0].id },
+                        func: () => {
+                            const selection = window.getSelection();
+                            return selection.toString().trim();
+                        }
+                    }).then((results) => {
+                        if (results && results[0] && results[0].result) {
+                            const selectedText = results[0].result;
+                            console.log('直接獲取的選取文字:', selectedText);
+                            if (selectedText) {
+                                sourceText.value = selectedText;
+                                translateAndUpdate(selectedText);
+                                checkExistingTranslation(selectedText);
+                            }
+                        }
+                    }).catch(error => {
+                        console.log('無法獲取選取文字:', error);
+                    });
+                    return;
+                }
+                
+                console.log('收到選取文字回應:', response);
+                if (response && response.text) {
+                    sourceText.value = response.text;
+                    translateAndUpdate(response.text);
+                    checkExistingTranslation(response.text);
+                }
+            });
+        }).catch(error => {
+            console.log('注入腳本失敗:', error);
         });
     });
 
@@ -68,30 +124,43 @@ document.addEventListener('DOMContentLoaded', function() {
     async function translateAndUpdate(text) {
         if (!text.trim()) return;
         
+        // 顯示翻譯中狀態
         translation.value = '翻譯中...';
+        translation.style.color = '#666';
+        saveButton.disabled = true;
         
         try {
             chrome.runtime.sendMessage({
-                action: 'translateText',
+                action: 'translate',
                 text: text,
                 targetLang: targetLanguage.value || 'zh-TW'
             }, function(response) {
                 if (chrome.runtime.lastError) {
                     console.error('翻譯請求失敗:', chrome.runtime.lastError);
                     translation.value = '翻譯失敗: ' + chrome.runtime.lastError.message;
+                    translation.style.color = '#e74c3c';
+                    showResult('翻譯請求失敗', 'error');
                     return;
                 }
-                if (response && response.success) {
+                
+                if (response && response.translation) {
                     translation.value = response.translation;
+                    translation.style.color = '#333';
+                    saveButton.disabled = false; // 啟用儲存按鈕
+                    showResult('翻譯完成', 'success');
                 } else {
                     const errorMsg = response ? response.error : '未知錯誤';
                     translation.value = '翻譯失敗: ' + errorMsg;
+                    translation.style.color = '#e74c3c';
+                    showResult('翻譯失敗: ' + errorMsg, 'error');
                     console.error('翻譯錯誤:', errorMsg);
                 }
             });
         } catch (error) {
             console.error('翻譯錯誤:', error);
             translation.value = '翻譯失敗: ' + error.message;
+            translation.style.color = '#e74c3c';
+            showResult('翻譯失敗: ' + error.message, 'error');
         }
     }
 
@@ -108,15 +177,23 @@ document.addEventListener('DOMContentLoaded', function() {
         };
     }
 
-    // 監聽輸入變化即時翻譯
+    // 即時翻譯 - 當使用者輸入時自動翻譯
     sourceText.addEventListener('input', debounce(function() {
         const text = sourceText.value.trim();
         if (text) {
             translateAndUpdate(text);
         } else {
             translation.value = '';
+            saveButton.disabled = true;
         }
-    }, 500));
+    }, 800)); // 等待800ms後才翻譯，避免過於頻繁
+    
+    // 監聽翻譯結果變化，更新儲存按鈕狀態
+    translation.addEventListener('input', function() {
+        const hasText = sourceText.value.trim().length > 0;
+        const hasTranslation = translation.value.trim().length > 0;
+        saveButton.disabled = !(hasText && hasTranslation);
+    });
     
     // 儲存翻譯
     saveButton.addEventListener('click', function() {
@@ -163,6 +240,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const todayTranslations = result.todayTranslations || {};
             const today = new Date().toDateString();
             
+            console.log('Popup 載入的翻譯資料:', translations);
+            console.log('Popup 翻譯項目數量:', Object.keys(translations).length);
+            console.log('今日翻譯資料:', todayTranslations);
+            
             wordCountEl.textContent = Object.keys(translations).length;
             todayCountEl.textContent = todayTranslations[today] || 0;
         });
@@ -192,7 +273,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // 儲存翻譯
-    function saveTranslation(source, trans) {
+    function saveTranslation(source, trans) {        
         const translationData = {
             translation: trans,
             timestamp: Date.now(),

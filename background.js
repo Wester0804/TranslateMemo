@@ -1,9 +1,36 @@
 // background.js - Service Worker for Manifest V3
-console.log('Background Service Worker 啟動');
+
+// Service Worker 啟動時建立右鍵選單
+chrome.contextMenus.removeAll(function() {
+    chrome.contextMenus.create({
+        id: 'translateSelectedText',
+        title: '翻譯選取文字',
+        contexts: ['selection']
+    });
+    
+    chrome.contextMenus.create({
+        id: 'openTranslator',
+        title: '開啟翻譯工具',
+        contexts: ['page']
+    });
+});
 
 // 安裝事件
 chrome.runtime.onInstalled.addListener(function() {
-    console.log('擴充功能已安裝');
+    // 建立右鍵選單
+    chrome.contextMenus.removeAll(function() {
+        chrome.contextMenus.create({
+            id: 'translateSelectedText',
+            title: '翻譯選取文字',
+            contexts: ['selection']
+        });
+        
+        chrome.contextMenus.create({
+            id: 'openTranslator',
+            title: '開啟翻譯工具',
+            contexts: ['page']
+        });
+    });
     
     // 初始化設定
     chrome.storage.sync.set({
@@ -17,180 +44,177 @@ chrome.runtime.onInstalled.addListener(function() {
     // 初始化本地儲存
     chrome.storage.local.get(['translations'], function(result) {
         if (!result.translations) {
-            chrome.storage.local.set({
-                translations: {},
-                todayTranslations: {},
-                translationStats: {
-                    totalWords: 0,
-                    totalTranslations: 0,
-                    streak: 0,
-                    lastDate: null
-                }
-            });
+            chrome.storage.local.set({translations: {}});
         }
     });
 });
 
-// 監聽來自 popup 和 content script 的訊息
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    console.log('Service Worker 收到消息:', request);
+// 監聽來自 popup 或 content script 的訊息
+chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+    if (request.action === 'translate') {
+        handleTranslateText(request.text, request.targetLang).then(function(result) {
+            sendResponse(result);
+        }).catch(function(error) {
+            sendResponse({error: error.message});
+        });
+        return true;
+    }
     
-    if (request.action === 'translateText') {
-        console.log('處理翻譯請求:', request.text);
-        handleTranslateText(request, sendResponse);
-        return true; // 保持通道開啟以支援異步回應
-    } 
-    else if (request.action === 'updateBadge') {
-        updateBadge(request.count);
-        sendResponse({success: true});
-    } 
-    else if (request.action === 'saveTranslation') {
-        saveTranslation(request.original, request.translation, request.context);
-        sendResponse({success: true});
-    } 
-    else if (request.action === 'getTranslations') {
-        getTranslations().then(translations => {
-            sendResponse({success: true, translations: translations});
-        });
-        return true;
-    } 
-    else if (request.action === 'checkHighlightWords') {
-        checkHighlightWords(request.text).then(words => {
-            sendResponse({success: true, words: words});
-        });
-        return true;
+    if (request.action === 'updateBadge') {
+        updateBadgeCount();
+    }
+    
+    if (request.action === 'saveTranslation') {
+        saveTranslation(request.original, request.translation);
     }
 });
 
-// 處理翻譯請求
-async function handleTranslateText(request, sendResponse) {
+// 翻譯文字
+async function handleTranslateText(text, targetLang = 'zh-TW') {
+    if (!text || text.trim() === '') {
+        throw new Error('文字不能為空');
+    }
+    
     try {
-        const { text, targetLang = 'zh-TW' } = request;
-        console.log(`開始翻譯: "${text}" -> ${targetLang}`);
-        
-        // 正規化語言代碼 (Google Translate API 偏好小寫)
-        const normalizedLang = targetLang.toLowerCase();
-        
-        // 使用 Google Translate 非官方 API
-        const apiUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(normalizedLang)}&dt=t&q=${encodeURIComponent(text)}`;
-        console.log('API URL:', apiUrl);
-        
+        const translation = await translateText(text, targetLang);
+        return {
+            original: text,
+            translation: translation,
+            targetLang: targetLang
+        };
+    } catch (error) {
+        console.error('翻譯失敗:', error);
+        throw error;
+    }
+}
+
+// 使用 Google Translate API 翻譯
+async function translateText(text, targetLang) {
+    const encodedText = encodeURIComponent(text);
+    const apiUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang.toLowerCase()}&dt=t&q=${encodedText}`;
+    
+    try {
         const response = await fetch(apiUrl);
-        console.log('Fetch 回應狀態:', response.status);
         
         if (!response.ok) {
-            throw new Error(`HTTP 錯誤: ${response.status}`);
+            throw new Error(`HTTP Error: ${response.status}`);
         }
         
         const data = await response.json();
-        console.log('翻譯資料:', data);
         
-        if (Array.isArray(data) && data[0] && Array.isArray(data[0])) {
-            const translation = data[0]
-                .filter(item => item && item[0])
-                .map(item => item[0])
-                .join('');
-            
-            console.log('翻譯結果:', translation);
-            sendResponse({success: true, translation: translation});
-        } else {
+        if (!data || !data[0] || !data[0][0] || !data[0][0][0]) {
             throw new Error('無效的翻譯回應格式');
         }
+        
+        const translation = data[0].map(item => item[0]).join('');
+        return translation;
+        
     } catch (error) {
-        console.error('翻譯錯誤:', error);
-        sendResponse({
-            success: false, 
-            error: error.message || '翻譯失敗'
-        });
+        console.error('翻譯API錯誤:', error);
+        throw new Error('翻譯服務暫時無法使用');
     }
 }
 
-// 更新擴展圖標上的徽章
-function updateBadge(count) {
-    console.log('更新徽章計數:', count);
-    if (count > 0) {
+// 更新徽章計數
+function updateBadgeCount() {
+    chrome.storage.local.get(['translations'], function(result) {
+        const translations = result.translations || {};
+        const count = Object.keys(translations).length;
+        
         chrome.action.setBadgeText({
-            text: count.toString()
+            text: count > 0 ? count.toString() : ''
         });
+        
         chrome.action.setBadgeBackgroundColor({
             color: '#4CAF50'
         });
-    } else {
-        chrome.action.setBadgeText({
-            text: ''
-        });
-    }
+    });
 }
 
-// 儲存翻譯功能
-async function saveTranslation(original, translation, context) {
-    console.log('儲存翻譯:', original, '->', translation);
+// 儲存翻譯到本地存儲
+function saveTranslation(original, translation) {
+    const normalizedOriginal = original.toLowerCase().trim();
     
-    const translationData = {
-        translation: translation,
-        timestamp: Date.now(),
-        count: 1,
-        context: context || ''
-    };
-    
-    try {
-        const result = await chrome.storage.local.get(['translations', 'todayTranslations']);
+    chrome.storage.local.get(['translations', 'todayTranslations'], function(result) {
         const translations = result.translations || {};
         const todayTranslations = result.todayTranslations || {};
         const today = new Date().toDateString();
-        const normalizedOriginal = original.toLowerCase().trim();
         
-        // 如果已存在，增加計數
         if (translations[normalizedOriginal]) {
             translations[normalizedOriginal].count++;
             translations[normalizedOriginal].timestamp = Date.now();
         } else {
-            translations[normalizedOriginal] = translationData;
-            // 更新今日翻譯計數
+            translations[normalizedOriginal] = {
+                translation: translation,
+                timestamp: Date.now(),
+                count: 1
+            };
+            
             todayTranslations[today] = (todayTranslations[today] || 0) + 1;
         }
         
-        // 儲存到本地存儲
-        await chrome.storage.local.set({
+        chrome.storage.local.set({
             translations: translations,
             todayTranslations: todayTranslations
-        });
-        
-        console.log('翻譯已儲存');
-    } catch (error) {
-        console.error('儲存翻譯失敗:', error);
-    }
-}
-
-// 取得所有翻譯
-async function getTranslations() {
-    try {
-        const result = await chrome.storage.local.get(['translations']);
-        return result.translations || {};
-    } catch (error) {
-        console.error('取得翻譯失敗:', error);
-        return {};
-    }
-}
-
-// 檢查需要標記的詞彙
-async function checkHighlightWords(text) {
-    try {
-        const translations = await getTranslations();
-        const words = [];
-        
-        for (const [original, data] of Object.entries(translations)) {
-            if (text.toLowerCase().includes(original.toLowerCase())) {
-                words.push({
-                    original: original,
-                    translation: data.translation
+        }, function() {
+            updateBadgeCount();
+            
+            // 通知所有標籤頁更新
+            chrome.tabs.query({}, function(tabs) {
+                tabs.forEach(tab => {
+                    try {
+                        chrome.tabs.sendMessage(tab.id, {
+                            action: 'updateTranslations',
+                            translations: translations
+                        });
+                    } catch (error) {
+                        // 忽略無法發送訊息的標籤頁
+                    }
                 });
-            }
-        }
-        
-        return words;
-    } catch (error) {
-        console.error('檢查標記詞彙失敗:', error);
-        return [];
-    }
+            });
+        });
+    });
 }
+
+// 監聽 storage 變化
+chrome.storage.onChanged.addListener(function(changes, namespace) {
+    if (namespace === 'local' && changes.translations) {
+        updateBadgeCount();
+    }
+});
+
+// 右鍵選單點擊事件
+chrome.contextMenus.onClicked.addListener(function(info, tab) {
+    if (info.menuItemId === 'translateSelectedText') {
+        const selectedText = info.selectionText;
+        if (selectedText) {
+            // 儲存選取的文字到 storage，供 popup 使用
+            chrome.storage.local.set({
+                pendingTranslation: {
+                    text: selectedText,
+                    timestamp: Date.now()
+                }
+            }, function() {
+                // 嘗試開啟 popup
+                try {
+                    chrome.action.openPopup();
+                } catch (error) {
+                    // 如果無法自動開啟 popup，發送通知
+                    chrome.tabs.sendMessage(tab.id, {
+                        action: 'showNotification',
+                        text: '請點擊擴充功能圖示查看翻譯結果'
+                    });
+                }
+            });
+        }
+    } else if (info.menuItemId === 'openTranslator') {
+        try {
+            chrome.action.openPopup();
+        } catch (error) {
+            console.log('無法開啟 popup');
+        }
+    }
+});
+
+// 初始化徽章計數
+updateBadgeCount();
